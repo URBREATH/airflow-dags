@@ -2,6 +2,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 from kafka import KafkaConsumer
+import json
 
 # Impostazioni di default per il DAG
 default_args = {
@@ -15,17 +16,30 @@ default_args = {
 
 
 def consume_kafka_message():
-    # Configura il consumer per il topic 'nome_topic'
+    """
+    Consuma un messaggio dal topic 'analytcs_result' e lo stampa formattato.
+    """
+    # Configura il consumer per il topic 'analytcs_result'
     consumer = KafkaConsumer(
-        'demo_nbs',
-        bootstrap_servers=['https://kafka-broker-dev.urbreath.tech/'],  # Modifica con l'indirizzo del tuo broker Kafka
+        'analytcs_result',
+        bootstrap_servers=['kafka-broker-1:9092'],  # Usa il nome host interno se in ambiente Docker
         auto_offset_reset='earliest',
         enable_auto_commit=True,
         group_id='airflow-group'
     )
+
     # Legge un solo messaggio e lo stampa
     for message in consumer:
-        print(f"Messaggio ricevuto: {message.value.decode('utf-8')}")
+        try:
+            # Decodifica il messaggio in JSON
+            msg = json.loads(message.value.decode('utf-8'))
+            print("Message recived from topic analytcs_result:")
+            print(f"  Status          : {msg.get('status')}")
+            print(f"  Bucket          : {msg.get('bucket')}")
+            print(f"  Object Name     : {msg.get('object_name')}")
+            print(f"  Original Message: {msg.get('original_message')}")
+        except Exception as e:
+            print("Error on message:", e)
         break  # Esce dal ciclo dopo il primo messaggio
     consumer.close()
 
@@ -34,7 +48,7 @@ def consume_kafka_message():
 with DAG(
         'dag_kafka_reader',
         default_args=default_args,
-        description='DAG per leggere messaggi da Kafka',
+        description='DAG to read message from broker',
         schedule_interval='@once',  # Esecuzione una sola volta; modifica se necessario
         start_date=datetime(2023, 1, 1),
         catchup=False,
