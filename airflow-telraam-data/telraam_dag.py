@@ -5,7 +5,7 @@ import pandas as pd
 import requests
 import json
 import os
-import s3fs # Import s3fs
+import s3fs
 
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
@@ -44,15 +44,24 @@ def _fetch_data_to_minio(**kwargs):
 
     print(f"Saving raw data to: s3://{MINIO_BUCKET}/{raw_data_path}")
 
-    # Retrieve credentials from Airflow Variables
     storage_options = _get_s3fs_storage_options_from_vars()
     
-    # Retrieve other configurations
     url = Variable.get("telraam_api_url")
     ids = Variable.get("telraam_segment_ids", deserialize_json=True)
-    time_start = "2025-05-27 00:00:00Z" # To be made dynamic if necessary
-    time_end = "2025-06-13 00:00:00Z"
     headers = {"Content-Type": "application/json"}
+
+    # --- MODIFICA PER DATE DINAMICHE ---
+    # Le date vengono prese dal contesto di esecuzione del DAG.
+    # Per una run del 1° luglio, l'intervallo sarà dal 1° giugno al 1° luglio.
+    time_start_dt = kwargs['data_interval_start']
+    time_end_dt = kwargs['data_interval_end']
+
+    # Formattiamo le date come richiesto dall'API Telraam.
+    time_start = time_start_dt.strftime('%Y-%m-%d %H:%M:%SZ')
+    time_end = time_end_dt.strftime('%Y-%m-%d %H:%M:%SZ')
+    
+    print(f"Fetching data from {time_start} to {time_end}")
+    # --- FINE MODIFICA ---
 
     for segment_id in ids:
         body = {
@@ -70,7 +79,6 @@ def _fetch_data_to_minio(**kwargs):
         else:
             print(f"No 'report' data for ID {segment_id}")
 
-    # Pass the raw data path to the next task via XComs
     ti.xcom_push(key='raw_data_path', value=raw_data_path)
 
 def _process_data_from_minio(**kwargs):
@@ -92,7 +100,6 @@ def _process_data_from_minio(**kwargs):
 
     storage_options = _get_s3fs_storage_options_from_vars()
     
-    # Use s3fs to find files in the raw data folder
     s3 = s3fs.S3FileSystem(**storage_options)
     s3_full_path = f"{MINIO_BUCKET}/{raw_data_path}/"
     csv_files_full_path = s3.glob(f"{s3_full_path}*.csv")
@@ -105,32 +112,26 @@ def _process_data_from_minio(**kwargs):
         df['source_id'] = segment_id
         all_dfs.append(df)
         
-        # ... you can insert the logic for _share.csv files here if needed ...
-        # e.g., share_percent.to_csv(f"s3://{MINIO_BUCKET}/{processed_data_path}/{segment_id}_share.csv", ...)
-
     if not all_dfs:
         print("No CSV files found to process.")
         return
 
     combined_df = pd.concat(all_dfs, ignore_index=True).sort_values(by='date')
     
-    # Save the output files to the 'processed_data' folder
     combined_df.to_csv(f"s3://{MINIO_BUCKET}/{processed_data_path}/all_data.csv", index=False, storage_options=storage_options)
     
     numeric_cols = combined_df.select_dtypes(include='number').columns
     summed_df = combined_df.groupby('date')[numeric_cols].sum().reset_index()
     summed_df.to_csv(f"s3://{MINIO_BUCKET}/{processed_data_path}/summed_data.csv", index=False, storage_options=storage_options)
     
-    # ... you can insert the logic for total_shares.csv here if needed ...
-
 # =============================================================================
 # 2. DAG DEFINITION
 # =============================================================================
 
 with DAG(
-    dag_id='telraam_minio_monthly_pipeline_vars', # Changed the ID for clarity
+    dag_id='telraam_minio_monthly_pipeline_vars',
     start_date=datetime.datetime(2025, 6, 1),
-    schedule_interval='0 5 1 * *',  # At 05:00 on the first day of each month
+    schedule_interval='0 5 1 * *',
     catchup=False,
     doc_md="""
     Monthly pipeline that uses **Airflow Variables** for MinIO credentials.
@@ -150,5 +151,4 @@ with DAG(
         python_callable=_process_data_from_minio,
     )
 
-    # Set the dependency between tasks
     fetch_task >> process_task
