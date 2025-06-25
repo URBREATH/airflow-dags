@@ -64,7 +64,7 @@ def _fetch_data_to_minio(**kwargs):
             "timezone": "Europe/Brussels", "time_start": time_start, "time_end": time_end
         }
         response = requests.post(url, headers=headers, data=json.dumps(body))
-        response.raise_for_status() # Raise an error if the request fails
+        response.raise_for_status()
         data = response.json()
         
         if 'report' in data and data['report']:
@@ -107,6 +107,19 @@ def _process_data_from_minio(**kwargs):
         df['source_id'] = segment_id
         all_dfs.append(df)
         
+        share_cols = ['pedestrian', 'car', 'bike', 'heavy']
+        available_share_cols = [col for col in share_cols if col in df.columns]
+        if available_share_cols:
+            total_sum = df[available_share_cols].sum().sum()
+            if total_sum > 0:
+                total_shares = df[available_share_cols].sum()
+                share_percent = (total_shares / total_sum * 100).reset_index()
+                share_percent.columns = ['type', 'percent_share']
+                share_percent['total_count'] = total_shares.values
+                
+                output_s3_path = f"s3://{MINIO_BUCKET}/{processed_data_path}/{segment_id}_share.csv"
+                share_percent.to_csv(output_s3_path, index=False, storage_options=storage_options)
+
     if not all_dfs:
         print("No CSV files found to process.")
         return
@@ -119,6 +132,21 @@ def _process_data_from_minio(**kwargs):
     summed_df = combined_df.groupby('date')[numeric_cols].sum().reset_index()
     summed_df.to_csv(f"s3://{MINIO_BUCKET}/{processed_data_path}/summed_data.csv", index=False, storage_options=storage_options)
     
+    share_cols = ['pedestrian', 'car', 'bike', 'heavy']
+    available_share_cols = [col for col in share_cols if col in combined_df.columns]
+    if available_share_cols:
+        total_sum = combined_df[available_share_cols].sum().sum()
+        if total_sum > 0:
+            total_shares = combined_df[available_share_cols].sum()
+            share_percent = (total_shares / total_sum * 100).reset_index()
+            share_percent.columns = ['type', 'percent_share']
+            share_percent['total_count'] = total_shares.values
+            
+            output_s3_path = f"s3://{MINIO_BUCKET}/{processed_data_path}/total_shares.csv"
+            share_percent.to_csv(output_s3_path, index=False, storage_options=storage_options)
+    else:
+        print("No share columns found in the combined data.")
+
 # =============================================================================
 # 2. DAG DEFINITION
 # =============================================================================
@@ -131,7 +159,7 @@ with DAG(
     doc_md="""
     Monthly pipeline that uses **Airflow Variables** for MinIO credentials.
     - **fetch_data_to_minio**: Downloads raw data and saves it to `s3://telraamdata/raw_data/<timestamp>/`.
-    - **process_data_from_minio**: Processes the raw data and saves the results to `s3://telraamdata/processed_data/<timestamp>/`.
+    - **process_data_from_minio**: Processes the raw data and saves the results (including shares) to `s3://telraamdata/processed_data/<timestamp>/`.
     """,
     tags=['traffic', 'api', 'minio', 'variables'],
 ) as dag:
