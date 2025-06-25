@@ -50,18 +50,13 @@ def _fetch_data_to_minio(**kwargs):
     ids = Variable.get("telraam_segment_ids", deserialize_json=True)
     headers = {"Content-Type": "application/json"}
 
-    # --- MODIFICA PER DATE DINAMICHE ---
-    # Le date vengono prese dal contesto di esecuzione del DAG.
-    # Per una run del 1° luglio, l'intervallo sarà dal 1° giugno al 1° luglio.
     time_start_dt = kwargs['data_interval_start']
     time_end_dt = kwargs['data_interval_end']
 
-    # Formattiamo le date come richiesto dall'API Telraam.
     time_start = time_start_dt.strftime('%Y-%m-%d %H:%M:%SZ')
     time_end = time_end_dt.strftime('%Y-%m-%d %H:%M:%SZ')
     
     print(f"Fetching data from {time_start} to {time_end}")
-    # --- FINE MODIFICA ---
 
     for segment_id in ids:
         body = {
