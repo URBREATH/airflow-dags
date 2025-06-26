@@ -12,7 +12,7 @@ from airflow.operators.python import PythonOperator
 from airflow.models.variable import Variable
 
 # --- Configuration Constants ---
-MINIO_BUCKET = 'telraamdata'
+MINIO_BUCKET = 'urbreath-public-repo'
 
 # =============================================================================
 # 1. TASK FUNCTIONS UPDATED TO USE VARIABLES
@@ -40,7 +40,7 @@ def _fetch_data_to_minio(**kwargs):
     ti = kwargs['ti']
     logical_date = kwargs['data_interval_start']
     timestamp_path = logical_date.strftime('%Y-%m-%d_%H-%M-%S')
-    raw_data_path = f"raw_data/{timestamp_path}"
+    raw_data_path = f"Leuven/Mobility/KPIs/{timestamp_path}/raw_data"
 
     print(f"Saving raw data to: s3://{MINIO_BUCKET}/{raw_data_path}")
 
@@ -89,7 +89,7 @@ def _process_data_from_minio(**kwargs):
     if not raw_data_path:
         raise ValueError("Could not retrieve raw_data_path from XComs.")
 
-    processed_data_path = f"processed_data/{timestamp_path}"
+    processed_data_path = f"Leuven/Mobility/KPIs/{timestamp_path}/processed_data"
     print(f"Reading from: s3://{MINIO_BUCKET}/{raw_data_path}")
     print(f"Saving processed data to: s3://{MINIO_BUCKET}/{processed_data_path}")
 
