@@ -1,5 +1,0 @@
-calpIRIjtOLxV5MrGOg44Qs2jfcmPRX3xmMAh4s3
- https://app.swaggerhub.com/apis-docs/telraam/Telraam-API/1.2.0
-
-
- https://app.swaggerhub.com/apis-docs/telraam/Telraam-API/1.2.0#/Traffic/post_v1_reports_traffic
